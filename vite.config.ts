@@ -27,13 +27,15 @@ export default defineConfig(({ mode }) => ({
           }
           return '[name].[ext]';
         },
-        format: 'iife' // Usar IIFE para compatibilidade
+        format: 'es', // Usar ES modules
+        inlineDynamicImports: false // Explicitamente desabilitar
       }
     },
-    target: 'es2017', // Target mais compatível
+    target: 'es2020', // Target mais moderno para ES modules
     outDir: 'dist',
     emptyOutDir: true,
-    copyPublicDir: false
+    copyPublicDir: false,
+    minify: false // Desabilitar minificação para debug
   } : undefined,
   publicDir: mode === 'extension' ? false : 'public'
 }))

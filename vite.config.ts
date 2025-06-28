@@ -27,10 +27,11 @@ export default defineConfig(({ mode }) => ({
           }
           return '[name].[ext]';
         },
-        format: 'es' // Usar ES modules
+        format: 'iife', // Usar IIFE em vez de ES modules
+        inlineDynamicImports: true // Inline imports para evitar problemas
       }
     },
-    target: 'es2020', // Target mais moderno para service workers
+    target: 'es2017', // Target mais compatível
     outDir: 'dist',
     emptyOutDir: true,
     copyPublicDir: false

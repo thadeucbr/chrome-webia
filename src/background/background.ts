@@ -30,9 +30,13 @@ class BackgroundService {
     console.log('Extensão instalada pela primeira vez');
     
     // Abrir página de boas-vindas
-    chrome.tabs.create({
-      url: chrome.runtime.getURL('options.html')
-    });
+    try {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL('options.html')
+      });
+    } catch (error) {
+      console.error('Erro ao abrir página de opções:', error);
+    }
   }
 
   private async handleUpdate() {
@@ -67,6 +71,11 @@ class BackgroundService {
           sendResponse({ hasPermissions });
           break;
 
+        case 'GET_MODELS':
+          const models = await this.getAvailableModels(message.provider, message.apiKey);
+          sendResponse({ models });
+          break;
+
         default:
           sendResponse({ error: 'Tipo de mensagem não reconhecido' });
       }
@@ -84,7 +93,7 @@ class BackgroundService {
 
       if (!settings?.isConfigured) {
         // Abrir página de configurações se não estiver configurado
-        chrome.tabs.create({
+        await chrome.tabs.create({
           url: chrome.runtime.getURL('options.html')
         });
       }
@@ -116,6 +125,83 @@ class BackgroundService {
     }
   }
 
+  private async getAvailableModels(provider: string, apiKey: string): Promise<string[]> {
+    try {
+      switch (provider) {
+        case 'openai':
+          return await this.getOpenAIModels(apiKey);
+        case 'gemini':
+          return await this.getGeminiModels(apiKey);
+        case 'ollama':
+          return await this.getOllamaModels(apiKey);
+        default:
+          return [];
+      }
+    } catch (error) {
+      console.error('Erro ao buscar modelos:', error);
+      return [];
+    }
+  }
+
+  private async getOpenAIModels(apiKey: string): Promise<string[]> {
+    try {
+      const response = await fetch('https://api.openai.com/v1/models', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na API OpenAI: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.data
+        .filter((model: any) => model.id.includes('gpt'))
+        .map((model: any) => model.id)
+        .sort();
+    } catch (error) {
+      console.error('Erro ao buscar modelos OpenAI:', error);
+      return ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview']; // Fallback
+    }
+  }
+
+  private async getGeminiModels(apiKey: string): Promise<string[]> {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+
+      if (!response.ok) {
+        throw new Error(`Erro na API Gemini: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.models
+        .filter((model: any) => model.name.includes('gemini'))
+        .map((model: any) => model.name.split('/').pop())
+        .sort();
+    } catch (error) {
+      console.error('Erro ao buscar modelos Gemini:', error);
+      return ['gemini-pro', 'gemini-pro-vision']; // Fallback
+    }
+  }
+
+  private async getOllamaModels(baseUrl: string): Promise<string[]> {
+    try {
+      const response = await fetch(`${baseUrl}/api/tags`);
+
+      if (!response.ok) {
+        throw new Error(`Erro no Ollama: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.models.map((model: any) => model.name).sort();
+    } catch (error) {
+      console.error('Erro ao buscar modelos Ollama:', error);
+      return ['llama2', 'codellama', 'mistral']; // Fallback
+    }
+  }
+
   // Método para limpar dados antigos (executado periodicamente)
   private async cleanupOldData() {
     try {
@@ -142,12 +228,12 @@ class BackgroundService {
 }
 
 // Inicializar o serviço de background
-new BackgroundService();
+const backgroundService = new BackgroundService();
 
 // Executar limpeza de dados uma vez por dia
 chrome.alarms.create('cleanup', { periodInMinutes: 24 * 60 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'cleanup') {
-    new BackgroundService()['cleanupOldData']();
+    backgroundService['cleanupOldData']();
   }
 });

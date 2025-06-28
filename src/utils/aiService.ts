@@ -11,17 +11,17 @@ export class AIService {
 
     switch (settings.selectedProvider) {
       case 'openai':
-        return this.callOpenAI(prompt, settings.apiKey);
+        return this.callOpenAI(prompt, settings.apiKey, settings.selectedModel);
       case 'gemini':
-        return this.callGemini(prompt, settings.apiKey);
+        return this.callGemini(prompt, settings.apiKey, settings.selectedModel);
       case 'ollama':
-        return this.callOllama(prompt, settings.apiKey);
+        return this.callOllama(prompt, settings.apiKey, settings.selectedModel);
       default:
         throw new Error('Provedor de IA não suportado');
     }
   }
 
-  private async callOpenAI(prompt: string, apiKey: string): Promise<string> {
+  private async callOpenAI(prompt: string, apiKey: string, model: string): Promise<string> {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -29,7 +29,7 @@ export class AIService {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: model || 'gpt-3.5-turbo',
         messages: [
           {
             role: 'system',
@@ -45,15 +45,17 @@ export class AIService {
     });
 
     if (!response.ok) {
-      throw new Error(`Erro na API OpenAI: ${response.statusText}`);
+      const errorData = await response.text();
+      throw new Error(`Erro na API OpenAI: ${response.status} - ${errorData}`);
     }
 
     const data = await response.json();
     return data.choices[0].message.content;
   }
 
-  private async callGemini(prompt: string, apiKey: string): Promise<string> {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+  private async callGemini(prompt: string, apiKey: string, model: string): Promise<string> {
+    const modelName = model || 'gemini-pro';
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -65,26 +67,38 @@ export class AIService {
 
 Instrução: ${prompt}`
           }]
-        }]
+        }],
+        generationConfig: {
+          temperature: 0.3,
+          topK: 1,
+          topP: 1,
+          maxOutputTokens: 2048,
+        }
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Erro na API Gemini: ${response.statusText}`);
+      const errorData = await response.text();
+      throw new Error(`Erro na API Gemini: ${response.status} - ${errorData}`);
     }
 
     const data = await response.json();
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+      throw new Error('Resposta inválida da API Gemini');
+    }
+    
     return data.candidates[0].content.parts[0].text;
   }
 
-  private async callOllama(prompt: string, baseUrl: string): Promise<string> {
+  private async callOllama(prompt: string, baseUrl: string, model: string): Promise<string> {
     const response = await fetch(`${baseUrl}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama2',
+        model: model || 'llama2',
         prompt: `Você é um assistente que converte instruções em passos de automação web. Responda sempre em JSON com formato: {"steps": [{"action": "navigate|click|type|wait", "target": "seletor ou URL", "value": "texto se necessário", "description": "descrição do passo"}], "explanation": "explicação do que será feito", "warnings": ["avisos se houver"]}
 
 Instrução: ${prompt}`,
@@ -93,7 +107,8 @@ Instrução: ${prompt}`,
     });
 
     if (!response.ok) {
-      throw new Error(`Erro no Ollama: ${response.statusText}`);
+      const errorData = await response.text();
+      throw new Error(`Erro no Ollama: ${response.status} - ${errorData}`);
     }
 
     const data = await response.json();
@@ -103,7 +118,15 @@ Instrução: ${prompt}`,
   async processInstruction(instruction: string): Promise<AIResponse> {
     try {
       const response = await this.makeRequest(instruction);
-      const parsed = JSON.parse(response);
+      
+      // Tentar extrair JSON da resposta
+      let jsonStr = response;
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      }
+      
+      const parsed = JSON.parse(jsonStr);
       
       return {
         steps: parsed.steps.map((step: any, index: number) => ({
@@ -119,7 +142,7 @@ Instrução: ${prompt}`,
       };
     } catch (error) {
       console.error('Erro ao processar instrução:', error);
-      throw new Error('Não foi possível processar a instrução. Verifique sua configuração de IA.');
+      throw new Error(`Não foi possível processar a instrução: ${error.message}`);
     }
   }
 }

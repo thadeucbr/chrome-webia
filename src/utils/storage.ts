@@ -3,6 +3,7 @@ import { UserSettings } from '../types';
 const DEFAULT_SETTINGS: UserSettings = {
   selectedProvider: '',
   apiKey: '',
+  selectedModel: '',
   isConfigured: false,
   hasCompletedOnboarding: false
 };
@@ -34,5 +35,25 @@ export const clearSettings = async (): Promise<void> => {
   } catch (error) {
     console.error('Erro ao limpar configurações:', error);
     throw error;
+  }
+};
+
+export const getAvailableModels = async (provider: string, apiKey: string): Promise<string[]> => {
+  try {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { type: 'GET_MODELS', provider, apiKey },
+        (response) => {
+          if (response && response.models) {
+            resolve(response.models);
+          } else {
+            resolve([]);
+          }
+        }
+      );
+    });
+  } catch (error) {
+    console.error('Erro ao buscar modelos:', error);
+    return [];
   }
 };

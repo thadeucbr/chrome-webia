@@ -6,11 +6,13 @@ export interface AIProvider {
   costInfo: string;
   apiKeyLabel: string;
   icon: string;
+  defaultModels: string[];
 }
 
 export interface UserSettings {
   selectedProvider: string;
   apiKey: string;
+  selectedModel: string;
   isConfigured: boolean;
   hasCompletedOnboarding: boolean;
 }

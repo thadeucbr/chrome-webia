@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { ChevronRight, ChevronLeft, CheckCircle, AlertCircle, ExternalLink, RefreshCw } from 'lucide-react';
 import { AI_PROVIDERS } from '../utils/aiProviders';
-import { saveSettings } from '../utils/storage';
+import { saveSettings, getAvailableModels } from '../utils/storage';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -12,12 +12,16 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
 
   const steps = [
     'Bem-vindo',
     'Escolha sua IA',
     'Configure a chave',
+    'Escolha o modelo',
     'Teste a conexão',
     'Pronto!'
   ];
@@ -34,6 +38,29 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
     }
   };
 
+  const loadModels = async () => {
+    if (!apiKey || !selectedProvider) return;
+    
+    setIsLoadingModels(true);
+    try {
+      const models = await getAvailableModels(selectedProvider, apiKey);
+      setAvailableModels(models);
+      if (models.length > 0 && !selectedModel) {
+        setSelectedModel(models[0]);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar modelos:', error);
+      // Usar modelos padrão em caso de erro
+      const provider = AI_PROVIDERS.find(p => p.id === selectedProvider);
+      if (provider) {
+        setAvailableModels(provider.defaultModels);
+        setSelectedModel(provider.defaultModels[0]);
+      }
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
   const testConnection = async () => {
     setIsTestingConnection(true);
     try {
@@ -42,6 +69,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
       await saveSettings({
         selectedProvider,
         apiKey,
+        selectedModel,
         isConfigured: true,
         hasCompletedOnboarding: true
       });
@@ -174,6 +202,74 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
 
       case 3:
         return (
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                Escolha o Modelo de IA
+              </h2>
+              <p className="text-gray-600">
+                Selecione qual modelo você quer usar
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <button
+                onClick={loadModels}
+                disabled={!apiKey || isLoadingModels}
+                className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isLoadingModels ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    <span>Carregando...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Carregar Modelos</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {availableModels.length > 0 && (
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">
+                  Modelos Disponíveis:
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  {availableModels.map((model) => (
+                    <div
+                      key={model}
+                      className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                        selectedModel === model
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      onClick={() => setSelectedModel(model)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-800">{model}</span>
+                        {selectedModel === model && (
+                          <CheckCircle className="w-5 h-5 text-blue-500" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {availableModels.length === 0 && !isLoadingModels && (
+              <div className="text-center text-gray-500">
+                Clique em "Carregar Modelos" para ver os modelos disponíveis
+              </div>
+            )}
+          </div>
+        );
+
+      case 4:
+        return (
           <div className="text-center space-y-6">
             <h2 className="text-2xl font-bold text-gray-800">
               Vamos testar sua configuração
@@ -182,9 +278,18 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
               Clique no botão abaixo para verificar se tudo está funcionando
             </p>
             
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="font-semibold text-gray-800 mb-2">Configuração Atual:</h3>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p><strong>Provedor:</strong> {AI_PROVIDERS.find(p => p.id === selectedProvider)?.name}</p>
+                <p><strong>Modelo:</strong> {selectedModel}</p>
+                <p><strong>API Key:</strong> {apiKey ? '••••••••' : 'Não configurada'}</p>
+              </div>
+            </div>
+            
             <button
               onClick={testConnection}
-              disabled={isTestingConnection || !apiKey}
+              disabled={isTestingConnection || !apiKey || !selectedModel}
               className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isTestingConnection ? (
@@ -199,7 +304,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
           </div>
         );
 
-      case 4:
+      case 5:
         return (
           <div className="text-center space-y-6">
             <div className="text-6xl mb-4">🎉</div>
@@ -285,7 +390,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
       </AnimatePresence>
 
       {/* Navigation */}
-      {currentStep < steps.length - 1 && currentStep !== 3 && (
+      {currentStep < steps.length - 1 && currentStep !== 4 && (
         <div className="flex justify-between mt-8">
           <button
             onClick={prevStep}
@@ -300,7 +405,8 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
             onClick={nextStep}
             disabled={
               (currentStep === 1 && !selectedProvider) ||
-              (currentStep === 2 && !apiKey)
+              (currentStep === 2 && !apiKey) ||
+              (currentStep === 3 && !selectedModel)
             }
             className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >

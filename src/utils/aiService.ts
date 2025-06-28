@@ -54,7 +54,9 @@ export class AIService {
   }
 
   private async callGemini(prompt: string, apiKey: string, model: string): Promise<string> {
-    const modelName = model || 'gemini-pro';
+    // Usar modelo padrão mais recente se não especificado
+    const modelName = model || 'gemini-1.5-flash';
+    
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {

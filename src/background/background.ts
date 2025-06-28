@@ -16,7 +16,7 @@ interface AIProvider {
   defaultModels: string[];
 }
 
-// Provedores de IA
+// Provedores de IA com modelos atualizados
 const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'openai',
@@ -26,7 +26,7 @@ const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'gemini',
     name: 'Google Gemini',
-    defaultModels: ['gemini-pro', 'gemini-pro-vision']
+    defaultModels: ['gemini-1.5-flash', 'gemini-1.5-pro']
   },
   {
     id: 'ollama',
@@ -293,13 +293,19 @@ class BackgroundService {
       }
       
       const models = data.models
-        .filter((model: any) => model.name && model.name.includes('gemini'))
+        .filter((model: any) => {
+          // Filtrar apenas modelos que suportam generateContent
+          return model.name && 
+                 model.name.includes('gemini') && 
+                 model.supportedGenerationMethods && 
+                 model.supportedGenerationMethods.includes('generateContent');
+        })
         .map((model: any) => model.name.split('/').pop())
         .filter((name: string) => name) // Remove undefined/null
         .sort();
       
       console.log('✅ Modelos Gemini encontrados:', models.length);
-      return models;
+      return models.length > 0 ? models : this.getDefaultModels('gemini');
     } catch (error) {
       console.error('❌ Erro ao buscar modelos Gemini:', error);
       return this.getDefaultModels('gemini');

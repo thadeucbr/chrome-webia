@@ -19,7 +19,7 @@ export const AI_PROVIDERS: AIProvider[] = [
     costInfo: 'Gratuito até 60 requisições por minuto',
     apiKeyLabel: 'Chave da API Gemini',
     icon: '✨',
-    defaultModels: ['gemini-pro', 'gemini-pro-vision']
+    defaultModels: ['gemini-1.5-flash', 'gemini-1.5-pro']
   },
   {
     id: 'ollama',

@@ -1,7 +1,7 @@
-// Service Worker para a extensão - Versão compatível
+// Service Worker para a extensão - Versão ES Module compatível
 console.log('🚀 Background script iniciado');
 
-// Definir tipos básicos para evitar problemas de importação
+// Definir tipos básicos
 interface UserSettings {
   selectedProvider: string;
   apiKey: string;
@@ -16,7 +16,7 @@ interface AIProvider {
   defaultModels: string[];
 }
 
-// Provedores de IA inline para evitar imports
+// Provedores de IA
 const AI_PROVIDERS: AIProvider[] = [
   {
     id: 'openai',
@@ -92,7 +92,6 @@ class BackgroundService {
   private async handleUpdate() {
     console.log('🔄 Extensão atualizada');
     
-    // Verificar se precisa migrar configurações
     try {
       const result = await chrome.storage.sync.get('userSettings');
       if (result.userSettings) {
@@ -172,7 +171,9 @@ class BackgroundService {
           break;
 
         case 'GET_MODELS':
+          console.log('🔍 Solicitação de modelos para:', message.provider);
           const models = await this.getAvailableModels(message.provider, message.apiKey);
+          console.log('📋 Modelos encontrados:', models.length);
           sendResponse({ models });
           break;
 
@@ -221,10 +222,12 @@ class BackgroundService {
         case 'ollama':
           return await this.getOllamaModels(apiKey);
         default:
+          console.log('📋 Usando modelos padrão para:', provider);
           return this.getDefaultModels(provider);
       }
     } catch (error) {
       console.error('❌ Erro ao buscar modelos:', error);
+      console.log('🔄 Retornando modelos padrão');
       return this.getDefaultModels(provider);
     }
   }
@@ -232,15 +235,23 @@ class BackgroundService {
   private async getOpenAIModels(apiKey: string): Promise<string[]> {
     try {
       console.log('🤖 Buscando modelos OpenAI...');
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
       const response = await fetch('https://api.openai.com/v1/models', {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error(`Erro na API OpenAI: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Erro na API OpenAI: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -260,16 +271,31 @@ class BackgroundService {
   private async getGeminiModels(apiKey: string): Promise<string[]> {
     try {
       console.log('✨ Buscando modelos Gemini...');
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`Erro na API Gemini: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Erro na API Gemini: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      
+      if (!data.models || !Array.isArray(data.models)) {
+        throw new Error('Resposta inválida da API Gemini');
+      }
+      
       const models = data.models
-        .filter((model: any) => model.name.includes('gemini'))
+        .filter((model: any) => model.name && model.name.includes('gemini'))
         .map((model: any) => model.name.split('/').pop())
+        .filter((name: string) => name) // Remove undefined/null
         .sort();
       
       console.log('✅ Modelos Gemini encontrados:', models.length);
@@ -283,14 +309,33 @@ class BackgroundService {
   private async getOllamaModels(baseUrl: string): Promise<string[]> {
     try {
       console.log('🏠 Buscando modelos Ollama...');
-      const response = await fetch(`${baseUrl}/api/tags`);
+      
+      // Garantir que a URL termine com /api/tags
+      const url = baseUrl.endsWith('/') ? `${baseUrl}api/tags` : `${baseUrl}/api/tags`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      const response = await fetch(url, {
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`Erro no Ollama: ${response.statusText}`);
+        throw new Error(`Erro no Ollama: ${response.status} - ${response.statusText}`);
       }
 
       const data = await response.json();
-      const models = data.models.map((model: any) => model.name).sort();
+      
+      if (!data.models || !Array.isArray(data.models)) {
+        throw new Error('Resposta inválida do Ollama');
+      }
+      
+      const models = data.models
+        .map((model: any) => model.name)
+        .filter((name: string) => name) // Remove undefined/null
+        .sort();
       
       console.log('✅ Modelos Ollama encontrados:', models.length);
       return models;
@@ -302,12 +347,15 @@ class BackgroundService {
 
   private getDefaultModels(provider: string): string[] {
     const providerData = AI_PROVIDERS.find(p => p.id === provider);
-    return providerData?.defaultModels || [];
+    const models = providerData?.defaultModels || [];
+    console.log('📋 Modelos padrão para', provider, ':', models);
+    return models;
   }
 
-  // Método para limpar dados antigos (executado periodicamente)
+  // Método para limpar dados antigos
   private async cleanupOldData() {
     try {
+      console.log('🧹 Iniciando limpeza de dados antigos...');
       const result = await chrome.storage.local.get();
       const now = Date.now();
       const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
@@ -323,6 +371,8 @@ class BackgroundService {
       if (keysToRemove.length > 0) {
         await chrome.storage.local.remove(keysToRemove);
         console.log(`🧹 Limpeza concluída: ${keysToRemove.length} itens removidos`);
+      } else {
+        console.log('🧹 Nenhum item antigo encontrado para limpeza');
       }
     } catch (error) {
       console.error('❌ Erro na limpeza de dados:', error);

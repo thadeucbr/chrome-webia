@@ -27,8 +27,7 @@ export default defineConfig(({ mode }) => ({
           }
           return '[name].[ext]';
         },
-        format: 'iife', // Usar IIFE em vez de ES modules
-        inlineDynamicImports: true // Inline imports para evitar problemas
+        format: 'iife' // Usar IIFE para compatibilidade
       }
     },
     target: 'es2017', // Target mais compatível

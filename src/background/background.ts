@@ -30,8 +30,10 @@ class BackgroundService {
     console.log('Extensão instalada pela primeira vez');
     
     try {
-      // Abrir side panel
-      await chrome.sidePanel.open({ windowId: (await chrome.windows.getCurrent()).id });
+      // Tentar abrir side panel
+      const currentWindow = await chrome.windows.getCurrent();
+      await chrome.sidePanel.open({ windowId: currentWindow.id });
+      console.log('Side panel aberto com sucesso');
     } catch (error) {
       console.error('Erro ao abrir side panel:', error);
       // Fallback para página de opções
@@ -52,6 +54,73 @@ class BackgroundService {
       }
     } catch (error) {
       console.error('Erro ao verificar configurações:', error);
+    }
+  }
+
+  private async handleActionClick(tab: chrome.tabs.Tab) {
+    console.log('Clique na extensão detectado');
+    
+    try {
+      // Tentar abrir side panel
+      if (tab.windowId) {
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+        console.log('Side panel aberto com sucesso');
+      } else {
+        // Se não tiver windowId, usar janela atual
+        const currentWindow = await chrome.windows.getCurrent();
+        await chrome.sidePanel.open({ windowId: currentWindow.id });
+        console.log('Side panel aberto na janela atual');
+      }
+    } catch (error) {
+      console.error('Erro ao abrir side panel:', error);
+      
+      // Fallback: verificar se a extensão está configurada
+      try {
+        const result = await chrome.storage.sync.get('userSettings');
+        const settings = result.userSettings;
+
+        if (!settings?.isConfigured) {
+          // Abrir página de configurações se não estiver configurado
+          await chrome.tabs.create({
+            url: chrome.runtime.getURL('options.html')
+          });
+          console.log('Página de opções aberta como fallback');
+        } else {
+          // Se estiver configurado, tentar abrir popup como último recurso
+          console.log('Tentando fallback para popup...');
+          // Não podemos forçar popup, mas podemos mostrar uma notificação
+          console.error('Side panel não disponível. Verifique se o Chrome suporta side panels.');
+        }
+      } catch (configError) {
+        console.error('Erro ao verificar configurações:', configError);
+        // Último recurso: abrir página de opções
+        await chrome.tabs.create({
+          url: chrome.runtime.getURL('options.html')
+        });
+      }
+    }
+  }
+
+  private async executeOnTab(tabId: number, action: any) {
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: 'EXECUTE_STEP',
+        step: action
+      });
+    } catch (error) {
+      console.error('Erro ao executar ação na aba:', error);
+      throw error;
+    }
+  }
+
+  private async checkPermissions(permissions: string[]): Promise<boolean> {
+    try {
+      return await chrome.permissions.contains({
+        permissions: permissions
+      });
+    } catch (error) {
+      console.error('Erro ao verificar permissões:', error);
+      return false;
     }
   }
 
@@ -84,53 +153,6 @@ class BackgroundService {
     } catch (error) {
       console.error('Erro ao processar mensagem:', error);
       sendResponse({ error: error.message });
-    }
-  }
-
-  private async handleActionClick(tab: chrome.tabs.Tab) {
-    try {
-      // Abrir side panel
-      await chrome.sidePanel.open({ windowId: tab.windowId });
-    } catch (error) {
-      console.error('Erro ao abrir side panel:', error);
-      
-      // Verificar se a extensão está configurada
-      try {
-        const result = await chrome.storage.sync.get('userSettings');
-        const settings = result.userSettings;
-
-        if (!settings?.isConfigured) {
-          // Abrir página de configurações se não estiver configurado
-          await chrome.tabs.create({
-            url: chrome.runtime.getURL('options.html')
-          });
-        }
-      } catch (configError) {
-        console.error('Erro ao verificar configurações:', configError);
-      }
-    }
-  }
-
-  private async executeOnTab(tabId: number, action: any) {
-    try {
-      await chrome.tabs.sendMessage(tabId, {
-        type: 'EXECUTE_STEP',
-        step: action
-      });
-    } catch (error) {
-      console.error('Erro ao executar ação na aba:', error);
-      throw error;
-    }
-  }
-
-  private async checkPermissions(permissions: string[]): Promise<boolean> {
-    try {
-      return await chrome.permissions.contains({
-        permissions: permissions
-      });
-    } catch (error) {
-      console.error('Erro ao verificar permissões:', error);
-      return false;
     }
   }
 

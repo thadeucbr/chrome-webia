@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => ({
       input: {
         popup: resolve(__dirname, 'popup.html'),
         options: resolve(__dirname, 'options.html'),
+        sidepanel: resolve(__dirname, 'sidepanel.html'),
         content: resolve(__dirname, 'src/content/content.ts'),
         background: resolve(__dirname, 'src/background/background.ts')
       },

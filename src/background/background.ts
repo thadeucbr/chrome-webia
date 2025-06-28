@@ -29,13 +29,15 @@ class BackgroundService {
   private async handleFirstInstall() {
     console.log('Extensão instalada pela primeira vez');
     
-    // Abrir página de boas-vindas
     try {
+      // Abrir side panel
+      await chrome.sidePanel.open({ windowId: (await chrome.windows.getCurrent()).id });
+    } catch (error) {
+      console.error('Erro ao abrir side panel:', error);
+      // Fallback para página de opções
       await chrome.tabs.create({
         url: chrome.runtime.getURL('options.html')
       });
-    } catch (error) {
-      console.error('Erro ao abrir página de opções:', error);
     }
   }
 
@@ -86,19 +88,26 @@ class BackgroundService {
   }
 
   private async handleActionClick(tab: chrome.tabs.Tab) {
-    // Verificar se a extensão está configurada
     try {
-      const result = await chrome.storage.sync.get('userSettings');
-      const settings = result.userSettings;
-
-      if (!settings?.isConfigured) {
-        // Abrir página de configurações se não estiver configurado
-        await chrome.tabs.create({
-          url: chrome.runtime.getURL('options.html')
-        });
-      }
+      // Abrir side panel
+      await chrome.sidePanel.open({ windowId: tab.windowId });
     } catch (error) {
-      console.error('Erro ao verificar configurações:', error);
+      console.error('Erro ao abrir side panel:', error);
+      
+      // Verificar se a extensão está configurada
+      try {
+        const result = await chrome.storage.sync.get('userSettings');
+        const settings = result.userSettings;
+
+        if (!settings?.isConfigured) {
+          // Abrir página de configurações se não estiver configurado
+          await chrome.tabs.create({
+            url: chrome.runtime.getURL('options.html')
+          });
+        }
+      } catch (configError) {
+        console.error('Erro ao verificar configurações:', configError);
+      }
     }
   }
 
@@ -135,11 +144,11 @@ class BackgroundService {
         case 'ollama':
           return await this.getOllamaModels(apiKey);
         default:
-          return [];
+          return this.getDefaultModels(provider);
       }
     } catch (error) {
       console.error('Erro ao buscar modelos:', error);
-      return [];
+      return this.getDefaultModels(provider);
     }
   }
 
@@ -163,7 +172,7 @@ class BackgroundService {
         .sort();
     } catch (error) {
       console.error('Erro ao buscar modelos OpenAI:', error);
-      return ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview']; // Fallback
+      return this.getDefaultModels('openai');
     }
   }
 
@@ -182,7 +191,7 @@ class BackgroundService {
         .sort();
     } catch (error) {
       console.error('Erro ao buscar modelos Gemini:', error);
-      return ['gemini-pro', 'gemini-pro-vision']; // Fallback
+      return this.getDefaultModels('gemini');
     }
   }
 
@@ -198,7 +207,20 @@ class BackgroundService {
       return data.models.map((model: any) => model.name).sort();
     } catch (error) {
       console.error('Erro ao buscar modelos Ollama:', error);
-      return ['llama2', 'codellama', 'mistral']; // Fallback
+      return this.getDefaultModels('ollama');
+    }
+  }
+
+  private getDefaultModels(provider: string): string[] {
+    switch (provider) {
+      case 'openai':
+        return ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview'];
+      case 'gemini':
+        return ['gemini-pro', 'gemini-pro-vision'];
+      case 'ollama':
+        return ['llama2', 'codellama', 'mistral'];
+      default:
+        return [];
     }
   }
 

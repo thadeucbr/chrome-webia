@@ -13,11 +13,25 @@ export default defineConfig(({ mode }) => ({
         background: resolve(__dirname, 'src/background/background.ts')
       },
       output: {
-        entryFileNames: '[name].js',
+        entryFileNames: (chunkInfo) => {
+          // Manter nomes específicos para scripts da extensão
+          if (chunkInfo.name === 'content') return 'content.js';
+          if (chunkInfo.name === 'background') return 'background.js';
+          return '[name].js';
+        },
         chunkFileNames: '[name].js',
-        assetFileNames: '[name].[ext]'
+        assetFileNames: (assetInfo) => {
+          // Manter estrutura de CSS
+          if (assetInfo.name?.endsWith('.css')) {
+            return 'src/styles/[name].[ext]';
+          }
+          return '[name].[ext]';
+        }
       }
     },
-    outDir: 'dist'
-  } : undefined
+    outDir: 'dist',
+    emptyOutDir: true,
+    copyPublicDir: false
+  } : undefined,
+  publicDir: mode === 'extension' ? false : 'public'
 }))

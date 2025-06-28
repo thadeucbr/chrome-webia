@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "build-extension": "vite build --mode extension"
+    "build-extension": "vite build --mode extension && npm run copy-extension-files",
+    "copy-extension-files": "cp manifest.json dist/ && mkdir -p dist/icons && cp -r public/icons/* dist/icons/ 2>/dev/null || true"
   },
   "dependencies": {
     "react": "^18.3.1",

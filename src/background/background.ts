@@ -1,12 +1,18 @@
 // Service Worker para a extensão
+console.log('Background script iniciado');
+
 class BackgroundService {
   constructor() {
+    console.log('BackgroundService inicializado');
     this.setupEventListeners();
   }
 
   private setupEventListeners() {
+    console.log('Configurando event listeners');
+    
     // Listener para instalação da extensão
     chrome.runtime.onInstalled.addListener((details) => {
+      console.log('onInstalled triggered:', details.reason);
       if (details.reason === 'install') {
         this.handleFirstInstall();
       } else if (details.reason === 'update') {
@@ -16,12 +22,14 @@ class BackgroundService {
 
     // Listener para mensagens de outros scripts
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      console.log('Mensagem recebida:', message.type);
       this.handleMessage(message, sender, sendResponse);
       return true; // Indica resposta assíncrona
     });
 
     // Listener para cliques na ação da extensão
     chrome.action.onClicked.addListener((tab) => {
+      console.log('Clique na extensão detectado, tab:', tab.id);
       this.handleActionClick(tab);
     });
   }
@@ -32,6 +40,7 @@ class BackgroundService {
     try {
       // Tentar abrir side panel
       const currentWindow = await chrome.windows.getCurrent();
+      console.log('Janela atual:', currentWindow.id);
       await chrome.sidePanel.open({ windowId: currentWindow.id });
       console.log('Side panel aberto com sucesso');
     } catch (error) {
@@ -40,6 +49,7 @@ class BackgroundService {
       await chrome.tabs.create({
         url: chrome.runtime.getURL('options.html')
       });
+      console.log('Página de opções aberta como fallback');
     }
   }
 
@@ -58,16 +68,18 @@ class BackgroundService {
   }
 
   private async handleActionClick(tab: chrome.tabs.Tab) {
-    console.log('Clique na extensão detectado');
+    console.log('Processando clique na extensão');
     
     try {
       // Tentar abrir side panel
       if (tab.windowId) {
+        console.log('Abrindo side panel na janela:', tab.windowId);
         await chrome.sidePanel.open({ windowId: tab.windowId });
         console.log('Side panel aberto com sucesso');
       } else {
         // Se não tiver windowId, usar janela atual
         const currentWindow = await chrome.windows.getCurrent();
+        console.log('Usando janela atual:', currentWindow.id);
         await chrome.sidePanel.open({ windowId: currentWindow.id });
         console.log('Side panel aberto na janela atual');
       }
@@ -86,10 +98,12 @@ class BackgroundService {
           });
           console.log('Página de opções aberta como fallback');
         } else {
-          // Se estiver configurado, tentar abrir popup como último recurso
-          console.log('Tentando fallback para popup...');
-          // Não podemos forçar popup, mas podemos mostrar uma notificação
+          // Se estiver configurado, mostrar erro
           console.error('Side panel não disponível. Verifique se o Chrome suporta side panels.');
+          // Tentar abrir página de opções mesmo assim
+          await chrome.tabs.create({
+            url: chrome.runtime.getURL('options.html')
+          });
         }
       } catch (configError) {
         console.error('Erro ao verificar configurações:', configError);
@@ -98,6 +112,41 @@ class BackgroundService {
           url: chrome.runtime.getURL('options.html')
         });
       }
+    }
+  }
+
+  private async handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
+    try {
+      console.log('Processando mensagem:', message.type);
+      
+      switch (message.type) {
+        case 'GET_ACTIVE_TAB':
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          sendResponse({ tab: tabs[0] });
+          break;
+
+        case 'EXECUTE_ON_TAB':
+          await this.executeOnTab(message.tabId, message.action);
+          sendResponse({ success: true });
+          break;
+
+        case 'CHECK_PERMISSIONS':
+          const hasPermissions = await this.checkPermissions(message.permissions);
+          sendResponse({ hasPermissions });
+          break;
+
+        case 'GET_MODELS':
+          const models = await this.getAvailableModels(message.provider, message.apiKey);
+          sendResponse({ models });
+          break;
+
+        default:
+          console.warn('Tipo de mensagem não reconhecido:', message.type);
+          sendResponse({ error: 'Tipo de mensagem não reconhecido' });
+      }
+    } catch (error) {
+      console.error('Erro ao processar mensagem:', error);
+      sendResponse({ error: error.message });
     }
   }
 
@@ -124,39 +173,9 @@ class BackgroundService {
     }
   }
 
-  private async handleMessage(message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) {
-    try {
-      switch (message.type) {
-        case 'GET_ACTIVE_TAB':
-          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-          sendResponse({ tab: tabs[0] });
-          break;
-
-        case 'EXECUTE_ON_TAB':
-          await this.executeOnTab(message.tabId, message.action);
-          sendResponse({ success: true });
-          break;
-
-        case 'CHECK_PERMISSIONS':
-          const hasPermissions = await this.checkPermissions(message.permissions);
-          sendResponse({ hasPermissions });
-          break;
-
-        case 'GET_MODELS':
-          const models = await this.getAvailableModels(message.provider, message.apiKey);
-          sendResponse({ models });
-          break;
-
-        default:
-          sendResponse({ error: 'Tipo de mensagem não reconhecido' });
-      }
-    } catch (error) {
-      console.error('Erro ao processar mensagem:', error);
-      sendResponse({ error: error.message });
-    }
-  }
-
   private async getAvailableModels(provider: string, apiKey: string): Promise<string[]> {
+    console.log('Buscando modelos para:', provider);
+    
     try {
       switch (provider) {
         case 'openai':
@@ -176,6 +195,7 @@ class BackgroundService {
 
   private async getOpenAIModels(apiKey: string): Promise<string[]> {
     try {
+      console.log('Buscando modelos OpenAI...');
       const response = await fetch('https://api.openai.com/v1/models', {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -188,10 +208,13 @@ class BackgroundService {
       }
 
       const data = await response.json();
-      return data.data
+      const models = data.data
         .filter((model: any) => model.id.includes('gpt'))
         .map((model: any) => model.id)
         .sort();
+      
+      console.log('Modelos OpenAI encontrados:', models.length);
+      return models;
     } catch (error) {
       console.error('Erro ao buscar modelos OpenAI:', error);
       return this.getDefaultModels('openai');
@@ -200,6 +223,7 @@ class BackgroundService {
 
   private async getGeminiModels(apiKey: string): Promise<string[]> {
     try {
+      console.log('Buscando modelos Gemini...');
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
 
       if (!response.ok) {
@@ -207,10 +231,13 @@ class BackgroundService {
       }
 
       const data = await response.json();
-      return data.models
+      const models = data.models
         .filter((model: any) => model.name.includes('gemini'))
         .map((model: any) => model.name.split('/').pop())
         .sort();
+      
+      console.log('Modelos Gemini encontrados:', models.length);
+      return models;
     } catch (error) {
       console.error('Erro ao buscar modelos Gemini:', error);
       return this.getDefaultModels('gemini');
@@ -219,6 +246,7 @@ class BackgroundService {
 
   private async getOllamaModels(baseUrl: string): Promise<string[]> {
     try {
+      console.log('Buscando modelos Ollama...');
       const response = await fetch(`${baseUrl}/api/tags`);
 
       if (!response.ok) {
@@ -226,7 +254,10 @@ class BackgroundService {
       }
 
       const data = await response.json();
-      return data.models.map((model: any) => model.name).sort();
+      const models = data.models.map((model: any) => model.name).sort();
+      
+      console.log('Modelos Ollama encontrados:', models.length);
+      return models;
     } catch (error) {
       console.error('Erro ao buscar modelos Ollama:', error);
       return this.getDefaultModels('ollama');
@@ -234,16 +265,13 @@ class BackgroundService {
   }
 
   private getDefaultModels(provider: string): string[] {
-    switch (provider) {
-      case 'openai':
-        return ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview'];
-      case 'gemini':
-        return ['gemini-pro', 'gemini-pro-vision'];
-      case 'ollama':
-        return ['llama2', 'codellama', 'mistral'];
-      default:
-        return [];
-    }
+    const defaults = {
+      'openai': ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview'],
+      'gemini': ['gemini-pro', 'gemini-pro-vision'],
+      'ollama': ['llama2', 'codellama', 'mistral']
+    };
+    
+    return defaults[provider] || [];
   }
 
   // Método para limpar dados antigos (executado periodicamente)
@@ -272,6 +300,7 @@ class BackgroundService {
 }
 
 // Inicializar o serviço de background
+console.log('Criando instância do BackgroundService');
 const backgroundService = new BackgroundService();
 
 // Executar limpeza de dados uma vez por dia
@@ -281,3 +310,5 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     backgroundService['cleanupOldData']();
   }
 });
+
+console.log('Background script configurado completamente');

@@ -26,9 +26,11 @@ export default defineConfig(({ mode }) => ({
             return 'src/styles/[name].[ext]';
           }
           return '[name].[ext]';
-        }
+        },
+        format: 'es' // Usar ES modules
       }
     },
+    target: 'es2020', // Target mais moderno para service workers
     outDir: 'dist',
     emptyOutDir: true,
     copyPublicDir: false

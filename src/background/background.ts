@@ -67,7 +67,37 @@ class BackgroundService {
       this.handleActionClick(tab);
     });
 
+    // Listener para quando uma aba é atualizada
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      if (changeInfo.status === 'complete' && tab.url && !tab.url.startsWith('chrome://')) {
+        this.ensureContentScriptInjected(tabId);
+      }
+    });
+
     console.log('✅ Event listeners configurados');
+  }
+
+  private async ensureContentScriptInjected(tabId: number) {
+    try {
+      // Verificar se o content script já está ativo
+      const response = await chrome.tabs.sendMessage(tabId, { type: 'PING' });
+      if (response?.success) {
+        console.log('✅ Content script já ativo na aba:', tabId);
+        return;
+      }
+    } catch (error) {
+      // Content script não está ativo, vamos injetar
+      console.log('🔄 Injetando content script na aba:', tabId);
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content.js']
+        });
+        console.log('✅ Content script injetado com sucesso na aba:', tabId);
+      } catch (injectError) {
+        console.error('❌ Erro ao injetar content script:', injectError);
+      }
+    }
   }
 
   private async handleFirstInstall() {
@@ -177,6 +207,16 @@ class BackgroundService {
           sendResponse({ models });
           break;
 
+        case 'INJECT_CONTENT_SCRIPT':
+          await this.injectContentScript(message.tabId);
+          sendResponse({ success: true });
+          break;
+
+        case 'CONTENT_SCRIPT_READY':
+          console.log('✅ Content script pronto na aba:', sender.tab?.id);
+          sendResponse({ success: true });
+          break;
+
         default:
           console.warn('⚠️ Tipo de mensagem não reconhecido:', message.type);
           sendResponse({ error: 'Tipo de mensagem não reconhecido' });
@@ -184,6 +224,22 @@ class BackgroundService {
     } catch (error) {
       console.error('❌ Erro ao processar mensagem:', error);
       sendResponse({ error: (error as Error).message });
+    }
+  }
+
+  private async injectContentScript(tabId: number): Promise<void> {
+    try {
+      console.log('💉 Injetando content script na aba:', tabId);
+      
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content.js']
+      });
+      
+      console.log('✅ Content script injetado com sucesso');
+    } catch (error) {
+      console.error('❌ Erro ao injetar content script:', error);
+      throw error;
     }
   }
 

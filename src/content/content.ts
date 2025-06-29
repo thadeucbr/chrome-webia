@@ -10,6 +10,8 @@ class WebAutomator {
   }
 
   private async init() {
+    console.log('🚀 Inicializando WebAutomator...');
+    
     // Aguardar DOM estar pronto
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.setup());
@@ -19,34 +21,41 @@ class WebAutomator {
   }
 
   private setup() {
-    console.log('🚀 WebAutomator inicializado');
+    console.log('🔧 Configurando WebAutomator...');
     this.setupMessageListener();
     this.injectStyles();
     this.isReady = true;
     
-    // Notificar que está pronto
+    console.log('✅ WebAutomator pronto!');
     this.notifyReady();
   }
 
   private notifyReady() {
     // Enviar sinal de que o content script está pronto
     try {
-      chrome.runtime.sendMessage({ type: 'CONTENT_SCRIPT_READY' });
+      chrome.runtime.sendMessage({ 
+        type: 'CONTENT_SCRIPT_READY',
+        url: window.location.href,
+        timestamp: Date.now()
+      });
+      console.log('📡 Notificação de prontidão enviada');
     } catch (error) {
-      console.log('Não foi possível notificar background script:', error);
+      console.log('⚠️ Não foi possível notificar background script:', error);
     }
   }
 
   private setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      console.log('📨 Mensagem recebida no content script:', message.type);
+      console.log('📨 Mensagem recebida:', message.type, message);
       
       if (message.type === 'EXECUTE_STEP') {
         if (!this.isReady) {
+          console.log('❌ Content script não está pronto');
           sendResponse({ success: false, error: 'Content script não está pronto' });
           return;
         }
         
+        console.log('🎯 Executando passo:', message.step);
         this.executeStep(message.step)
           .then(() => {
             console.log('✅ Passo executado com sucesso');
@@ -60,15 +69,26 @@ class WebAutomator {
       }
       
       if (message.type === 'PING') {
-        sendResponse({ success: true, ready: this.isReady });
+        console.log('🏓 PING recebido, respondendo PONG');
+        sendResponse({ 
+          success: true, 
+          ready: this.isReady,
+          url: window.location.href,
+          timestamp: Date.now()
+        });
         return;
       }
+
+      console.log('⚠️ Tipo de mensagem não reconhecido:', message.type);
     });
+    
+    console.log('👂 Message listener configurado');
   }
 
   private injectStyles() {
     // Verificar se já foi injetado
     if (document.getElementById('ai-assistant-styles')) {
+      console.log('🎨 Estilos já injetados');
       return;
     }
 
@@ -76,10 +96,11 @@ class WebAutomator {
     style.id = 'ai-assistant-styles';
     style.textContent = `
       .ai-assistant-highlight {
-        outline: 2px solid #3b82f6 !important;
+        outline: 3px solid #3b82f6 !important;
         outline-offset: 2px !important;
         background-color: rgba(59, 130, 246, 0.1) !important;
         transition: all 0.3s ease !important;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.5) !important;
       }
       
       .ai-assistant-executing {
@@ -89,12 +110,12 @@ class WebAutomator {
       .ai-assistant-executing::after {
         content: '';
         position: absolute;
-        top: -2px;
-        left: -2px;
-        right: -2px;
-        bottom: -2px;
-        border: 2px solid #3b82f6;
-        border-radius: 4px;
+        top: -4px;
+        left: -4px;
+        right: -4px;
+        bottom: -4px;
+        border: 3px solid #3b82f6;
+        border-radius: 6px;
         animation: ai-pulse 1s infinite;
         pointer-events: none;
         z-index: 10000;
@@ -102,7 +123,7 @@ class WebAutomator {
       
       @keyframes ai-pulse {
         0% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.5; transform: scale(1.02); }
+        50% { opacity: 0.7; transform: scale(1.02); }
         100% { opacity: 1; transform: scale(1); }
       }
       
@@ -118,6 +139,7 @@ class WebAutomator {
         pointer-events: none;
         white-space: nowrap;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: 1px solid #3b82f6;
       }
       
       .ai-assistant-tooltip::after {
@@ -132,12 +154,17 @@ class WebAutomator {
     `;
     
     // Tentar adicionar ao head, se não conseguir, adicionar ao body
-    const target = document.head || document.documentElement;
-    target.appendChild(style);
+    const target = document.head || document.documentElement || document.body;
+    if (target) {
+      target.appendChild(style);
+      console.log('🎨 Estilos injetados com sucesso');
+    } else {
+      console.log('⚠️ Não foi possível injetar estilos');
+    }
   }
 
   private async executeStep(step: any): Promise<void> {
-    console.log('🎯 Executando passo:', step);
+    console.log('🎯 Iniciando execução do passo:', step);
     
     if (this.isExecuting) {
       throw new Error('Já existe uma execução em andamento');
@@ -165,6 +192,10 @@ class WebAutomator {
         default:
           throw new Error(`Ação não suportada: ${step.action}`);
       }
+      console.log('✅ Passo executado com sucesso:', step.action);
+    } catch (error) {
+      console.error('❌ Erro na execução do passo:', error);
+      throw error;
     } finally {
       this.isExecuting = false;
     }
@@ -177,46 +208,54 @@ class WebAutomator {
       try {
         // Se for a mesma página, apenas resolver
         if (window.location.href === url) {
+          console.log('✅ Já estamos na página correta');
           resolve();
           return;
         }
         
         // Navegar para a URL
+        console.log('🔄 Redirecionando para:', url);
         window.location.href = url;
         
         // Aguardar um tempo para a navegação
         setTimeout(() => {
+          console.log('✅ Navegação concluída');
           resolve();
         }, 3000);
       } catch (error) {
+        console.error('❌ Erro ao navegar:', error);
         reject(new Error(`Erro ao navegar: ${error.message}`));
       }
     });
   }
 
   private async clickElement(selector: string): Promise<void> {
-    console.log('🖱️ Clicando em:', selector);
+    console.log('🖱️ Tentando clicar em:', selector);
     
-    const element = await this.findElementWithRetry(selector, 5000);
+    const element = await this.findElementWithRetry(selector, 10000); // 10 segundos
     if (!element) {
       throw new Error(`Elemento não encontrado: ${selector}`);
     }
 
+    console.log('✅ Elemento encontrado:', element);
     this.highlightElement(element);
-    await this.wait(500);
+    await this.wait(800);
 
     // Scroll para o elemento
+    console.log('📜 Fazendo scroll para o elemento...');
     element.scrollIntoView({ 
       behavior: 'smooth', 
       block: 'center',
       inline: 'center'
     });
-    await this.wait(500);
+    await this.wait(1000);
 
     // Simular clique humano
     const rect = element.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
+
+    console.log(`🎯 Clicando nas coordenadas: (${x}, ${y})`);
 
     // Disparar eventos de mouse
     const events = ['mousedown', 'mouseup', 'click'];
@@ -229,39 +268,54 @@ class WebAutomator {
         button: 0
       });
       element.dispatchEvent(event);
-      await this.wait(50);
+      await this.wait(100);
     }
 
     // Tentar click() nativo também
     if (element instanceof HTMLElement) {
+      console.log('🖱️ Executando click() nativo...');
       element.click();
+    }
+
+    // Tentar focus se for um elemento focável
+    if (element instanceof HTMLElement && 'focus' in element) {
+      try {
+        (element as any).focus();
+      } catch (e) {
+        // Ignorar erros de focus
+      }
     }
 
     this.removeHighlight(element);
     await this.wait(500);
+    console.log('✅ Clique executado com sucesso');
   }
 
   private async typeText(selector: string, text: string): Promise<void> {
-    console.log('⌨️ Digitando em:', selector, 'texto:', text);
+    console.log('⌨️ Tentando digitar em:', selector, 'texto:', text);
     
-    const element = await this.findElementWithRetry(selector, 5000) as HTMLInputElement | HTMLTextAreaElement;
+    const element = await this.findElementWithRetry(selector, 10000) as HTMLInputElement | HTMLTextAreaElement;
     if (!element) {
       throw new Error(`Campo de texto não encontrado: ${selector}`);
     }
 
+    console.log('✅ Campo encontrado:', element);
     this.highlightElement(element);
     
     // Focar no elemento
+    console.log('🎯 Focando no elemento...');
     element.focus();
-    await this.wait(300);
+    await this.wait(500);
 
     // Limpar campo existente
+    console.log('🧹 Limpando campo...');
     element.value = '';
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
-    await this.wait(200);
+    await this.wait(300);
 
     // Digitar texto caractere por caractere
+    console.log('⌨️ Digitando texto...');
     for (let i = 0; i < text.length; i++) {
       element.value += text[i];
       
@@ -276,7 +330,7 @@ class WebAutomator {
         bubbles: true 
       }));
       
-      await this.wait(50 + Math.random() * 100); // Velocidade humana variável
+      await this.wait(80 + Math.random() * 120); // Velocidade humana variável
     }
 
     // Eventos finais
@@ -284,12 +338,13 @@ class WebAutomator {
     element.dispatchEvent(new Event('blur', { bubbles: true }));
     
     this.removeHighlight(element);
+    console.log('✅ Texto digitado com sucesso');
   }
 
   private async scroll(direction: string): Promise<void> {
     console.log('📜 Fazendo scroll:', direction);
     
-    const scrollAmount = 300;
+    const scrollAmount = 400;
     const currentScroll = window.pageYOffset;
     
     let targetScroll: number;
@@ -310,31 +365,39 @@ class WebAutomator {
         targetScroll = parseInt(direction) || currentScroll;
     }
 
+    console.log(`📜 Scroll de ${currentScroll} para ${targetScroll}`);
     window.scrollTo({
       top: targetScroll,
       behavior: 'smooth'
     });
 
-    await this.wait(1000);
+    await this.wait(1500);
+    console.log('✅ Scroll executado');
   }
 
-  private async findElementWithRetry(selector: string, timeout: number = 5000): Promise<Element | null> {
+  private async findElementWithRetry(selector: string, timeout: number = 10000): Promise<Element | null> {
+    console.log(`🔍 Procurando elemento "${selector}" com timeout de ${timeout}ms...`);
     const startTime = Date.now();
+    let attempts = 0;
     
     while (Date.now() - startTime < timeout) {
+      attempts++;
+      console.log(`🔍 Tentativa ${attempts} de encontrar: ${selector}`);
+      
       const element = this.findElement(selector);
       if (element) {
+        console.log(`✅ Elemento encontrado na tentativa ${attempts}:`, element);
         return element;
       }
+      
       await this.wait(500);
     }
     
+    console.log(`❌ Elemento não encontrado após ${attempts} tentativas: ${selector}`);
     return null;
   }
 
   private findElement(selector: string): Element | null {
-    console.log('🔍 Procurando elemento:', selector);
-    
     // Tentar diferentes estratégias de seleção
     const strategies = [
       () => document.querySelector(selector),
@@ -342,16 +405,17 @@ class WebAutomator {
       () => document.querySelector(`[aria-label="${selector}"]`),
       () => document.querySelector(`[placeholder="${selector}"]`),
       () => document.querySelector(`[title="${selector}"]`),
+      () => document.querySelector(`[alt="${selector}"]`),
       () => this.findByText(selector),
       () => this.findByPartialText(selector),
       () => this.findByRole(selector)
     ];
 
-    for (const strategy of strategies) {
+    for (let i = 0; i < strategies.length; i++) {
       try {
-        const element = strategy();
+        const element = strategies[i]();
         if (element && this.isElementVisible(element)) {
-          console.log('✅ Elemento encontrado:', element);
+          console.log(`✅ Elemento encontrado com estratégia ${i + 1}:`, element);
           return element;
         }
       } catch (error) {
@@ -359,7 +423,6 @@ class WebAutomator {
       }
     }
 
-    console.log('❌ Elemento não encontrado:', selector);
     return null;
   }
 
@@ -383,26 +446,39 @@ class WebAutomator {
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
     
-    return (
+    const isVisible = (
       rect.width > 0 &&
       rect.height > 0 &&
       style.visibility !== 'hidden' &&
       style.display !== 'none' &&
       style.opacity !== '0'
     );
+    
+    if (!isVisible) {
+      console.log('❌ Elemento não visível:', {
+        width: rect.width,
+        height: rect.height,
+        visibility: style.visibility,
+        display: style.display,
+        opacity: style.opacity
+      });
+    }
+    
+    return isVisible;
   }
 
   private highlightElement(element: Element): void {
+    console.log('🎨 Destacando elemento...');
     element.classList.add('ai-assistant-highlight', 'ai-assistant-executing');
     
     // Adicionar tooltip
     const tooltip = document.createElement('div');
     tooltip.className = 'ai-assistant-tooltip';
-    tooltip.textContent = 'Executando ação...';
+    tooltip.textContent = '🤖 Executando ação...';
     
     const rect = element.getBoundingClientRect();
     tooltip.style.left = `${rect.left + rect.width / 2}px`;
-    tooltip.style.top = `${rect.top - 40}px`;
+    tooltip.style.top = `${rect.top - 50}px`;
     
     document.body.appendChild(tooltip);
     
@@ -410,10 +486,11 @@ class WebAutomator {
       if (tooltip.parentNode) {
         tooltip.parentNode.removeChild(tooltip);
       }
-    }, 2000);
+    }, 3000);
   }
 
   private removeHighlight(element: Element): void {
+    console.log('🎨 Removendo destaque...');
     element.classList.remove('ai-assistant-highlight', 'ai-assistant-executing');
   }
 
@@ -423,7 +500,9 @@ class WebAutomator {
 }
 
 // Inicializar o automatizador
+console.log('🚀 Criando instância do WebAutomator...');
 const automator = new WebAutomator();
 
 // Exportar para debug
 (window as any).webAutomator = automator;
+console.log('🔧 WebAutomator disponível globalmente como window.webAutomator');

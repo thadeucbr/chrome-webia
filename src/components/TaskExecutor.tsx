@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, Square, CheckCircle, AlertCircle, Clock, RefreshCw, Settings } from 'lucide-react';
+import { Play, Pause, Square, CheckCircle, AlertCircle, Clock, RefreshCw, Settings, Bug } from 'lucide-react';
 import { TaskStep } from '../types';
 
 interface TaskExecutorProps {
@@ -16,15 +16,36 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
   const [executedSteps, setExecutedSteps] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [isCheckingScript, setIsCheckingScript] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+
+  const addDebugInfo = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugInfo(prev => [...prev.slice(-9), `[${timestamp}] ${message}`]);
+    console.log(`[TaskExecutor] ${message}`);
+  };
 
   const checkContentScript = async (): Promise<boolean> => {
     try {
+      addDebugInfo('🔍 Verificando content script...');
+      
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab.id) return false;
+      if (!tab.id) {
+        addDebugInfo('❌ Nenhuma aba ativa encontrada');
+        return false;
+      }
+
+      addDebugInfo(`📋 Aba ativa: ${tab.url} (ID: ${tab.id})`);
+
+      // Verificar se é uma página especial
+      if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) {
+        addDebugInfo('⚠️ Página especial detectada - scripts não permitidos');
+        return false;
+      }
 
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
-          console.log('Timeout ao verificar content script');
+          addDebugInfo('⏰ Timeout ao verificar content script');
           resolve(false);
         }, 3000);
 
@@ -32,15 +53,19 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
           clearTimeout(timeout);
           
           if (chrome.runtime.lastError) {
-            console.log('Content script não encontrado:', chrome.runtime.lastError);
+            addDebugInfo(`❌ Erro de comunicação: ${chrome.runtime.lastError.message}`);
             resolve(false);
+          } else if (response?.success && response?.ready) {
+            addDebugInfo('✅ Content script ativo e pronto');
+            resolve(true);
           } else {
-            resolve(response?.success && response?.ready);
+            addDebugInfo('❌ Content script não está pronto');
+            resolve(false);
           }
         });
       });
     } catch (error) {
-      console.error('Erro ao verificar content script:', error);
+      addDebugInfo(`❌ Erro ao verificar content script: ${error.message}`);
       return false;
     }
   };
@@ -48,44 +73,56 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
   const injectContentScript = async (): Promise<boolean> => {
     try {
       setIsCheckingScript(true);
+      addDebugInfo('💉 Iniciando injeção do content script...');
+      
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab.id) return false;
+      if (!tab.id) {
+        addDebugInfo('❌ Nenhuma aba para injetar script');
+        return false;
+      }
 
-      console.log('🔄 Tentando injetar content script...');
-
-      // Método 1: Usar chrome.scripting.executeScript
+      // Método 1: chrome.scripting.executeScript
       try {
+        addDebugInfo('🔧 Tentando injeção via chrome.scripting...');
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           files: ['content.js']
         });
-        console.log('✅ Script injetado via chrome.scripting');
+        addDebugInfo('✅ Script injetado via chrome.scripting');
       } catch (scriptingError) {
-        console.log('❌ Erro com chrome.scripting:', scriptingError);
+        addDebugInfo(`❌ Erro com chrome.scripting: ${scriptingError.message}`);
         
-        // Método 2: Pedir para o background script injetar
+        // Método 2: Background script
         try {
-          await chrome.runtime.sendMessage({
+          addDebugInfo('🔧 Tentando injeção via background script...');
+          const response = await chrome.runtime.sendMessage({
             type: 'INJECT_CONTENT_SCRIPT',
             tabId: tab.id
           });
-          console.log('✅ Script injetado via background');
+          
+          if (response?.success) {
+            addDebugInfo('✅ Script injetado via background');
+          } else {
+            addDebugInfo('❌ Falha na injeção via background');
+            return false;
+          }
         } catch (backgroundError) {
-          console.log('❌ Erro com background script:', backgroundError);
+          addDebugInfo(`❌ Erro com background script: ${backgroundError.message}`);
           return false;
         }
       }
 
-      // Aguardar um pouco para o script carregar
+      // Aguardar carregamento
+      addDebugInfo('⏳ Aguardando carregamento do script...');
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Verificar se funcionou
       const isReady = await checkContentScript();
-      console.log('🔍 Content script pronto:', isReady);
+      addDebugInfo(`🔍 Verificação final: ${isReady ? 'SUCESSO' : 'FALHA'}`);
       
       return isReady;
     } catch (error) {
-      console.error('❌ Erro ao injetar content script:', error);
+      addDebugInfo(`❌ Erro geral na injeção: ${error.message}`);
       return false;
     } finally {
       setIsCheckingScript(false);
@@ -95,12 +132,13 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
   const executeStep = async (step: TaskStep, index: number): Promise<boolean> => {
     try {
       setError(null);
+      addDebugInfo(`🎯 Executando passo ${index + 1}: ${step.description}`);
       
-      // Verificar se content script está disponível
+      // Verificar content script
       let isReady = await checkContentScript();
       
       if (!isReady) {
-        console.log('Content script não encontrado, tentando injetar...');
+        addDebugInfo('🔄 Content script não encontrado, tentando injetar...');
         isReady = await injectContentScript();
         
         if (!isReady) {
@@ -108,13 +146,20 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
         }
       }
 
-      // Enviar comando para o content script
+      // Obter aba ativa
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
+      if (!tab.id) {
+        throw new Error('Nenhuma aba ativa encontrada');
+      }
+
+      addDebugInfo(`📤 Enviando comando para aba ${tab.id}...`);
+
+      // Enviar comando
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error('Timeout ao executar passo'));
-        }, 30000); // 30 segundos de timeout
+          addDebugInfo('⏰ Timeout ao executar passo');
+          reject(new Error('Timeout ao executar passo (30s)'));
+        }, 30000);
 
         chrome.tabs.sendMessage(tab.id!, {
           type: 'EXECUTE_STEP',
@@ -123,63 +168,78 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
           clearTimeout(timeout);
           
           if (chrome.runtime.lastError) {
+            addDebugInfo(`❌ Erro de comunicação: ${chrome.runtime.lastError.message}`);
             reject(new Error(`Erro de comunicação: ${chrome.runtime.lastError.message}`));
             return;
           }
 
           if (response?.success) {
-            // Marcar como executado
+            addDebugInfo(`✅ Passo ${index + 1} executado com sucesso`);
             setExecutedSteps(prev => new Set([...prev, index]));
             resolve(true);
           } else {
-            reject(new Error(response?.error || 'Erro desconhecido ao executar passo'));
+            const errorMsg = response?.error || 'Erro desconhecido ao executar passo';
+            addDebugInfo(`❌ Falha no passo ${index + 1}: ${errorMsg}`);
+            reject(new Error(errorMsg));
           }
         });
       });
     } catch (error) {
-      console.error('Erro ao executar passo:', error);
+      addDebugInfo(`❌ Erro no passo ${index + 1}: ${error.message}`);
       throw error;
     }
   };
 
   const startExecution = async () => {
+    addDebugInfo('🚀 Iniciando execução da tarefa...');
     setIsExecuting(true);
     setIsPaused(false);
     setError(null);
 
     try {
       for (let i = currentStepIndex; i < steps.length; i++) {
-        if (isPaused) break;
+        if (isPaused) {
+          addDebugInfo('⏸️ Execução pausada pelo usuário');
+          break;
+        }
         
         setCurrentStepIndex(i);
         
         try {
           await executeStep(steps[i], i);
           
-          // Aguardar um pouco antes do próximo passo
+          // Aguardar entre passos
+          addDebugInfo('⏳ Aguardando antes do próximo passo...');
           await new Promise(resolve => setTimeout(resolve, 1500));
         } catch (stepError) {
-          setError(`Erro no passo ${i + 1}: ${stepError.message}`);
+          const errorMsg = `Erro no passo ${i + 1}: ${stepError.message}`;
+          addDebugInfo(`❌ ${errorMsg}`);
+          setError(errorMsg);
           setIsExecuting(false);
           return;
         }
       }
 
-      // Se chegou até aqui, todos os passos foram executados
+      // Sucesso
+      addDebugInfo('🎉 Todos os passos executados com sucesso!');
       setIsExecuting(false);
       onComplete();
     } catch (error) {
-      setError(`Erro geral: ${error.message}`);
+      const errorMsg = `Erro geral: ${error.message}`;
+      addDebugInfo(`❌ ${errorMsg}`);
+      setError(errorMsg);
       setIsExecuting(false);
     }
   };
 
   const pauseExecution = () => {
+    addDebugInfo('⏸️ Pausando execução...');
     setIsPaused(true);
     setIsExecuting(false);
   };
 
   const stopExecution = () => {
+    addDebugInfo('⏹️ Parando execução...');
     setIsExecuting(false);
     setIsPaused(false);
     setCurrentStepIndex(0);
@@ -189,16 +249,16 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
   };
 
   const retryFromCurrent = () => {
+    addDebugInfo('🔄 Tentando novamente...');
     setError(null);
     startExecution();
   };
 
   const forceInjectScript = async () => {
+    addDebugInfo('🔧 Forçando injeção do script...');
     setError(null);
     const success = await injectContentScript();
-    if (success) {
-      setError(null);
-    } else {
+    if (!success) {
       setError('Não foi possível injetar o content script. Tente recarregar a página.');
     }
   };
@@ -232,6 +292,29 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
         />
       </div>
 
+      {/* Debug Toggle */}
+      <div className="flex justify-center">
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className="flex items-center space-x-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          <Bug className="w-3 h-3" />
+          <span>{showDebug ? 'Ocultar' : 'Mostrar'} Debug</span>
+        </button>
+      </div>
+
+      {/* Debug Info */}
+      {showDebug && (
+        <div className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono max-h-40 overflow-y-auto">
+          {debugInfo.map((info, index) => (
+            <div key={index} className="mb-1">{info}</div>
+          ))}
+          {debugInfo.length === 0 && (
+            <div className="text-gray-500">Nenhuma informação de debug ainda...</div>
+          )}
+        </div>
+      )}
+
       {/* Error Display */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -247,7 +330,8 @@ const TaskExecutor: React.FC<TaskExecutorProps> = ({ steps, onComplete, onCancel
                   <ul className="list-disc list-inside mt-1 space-y-1">
                     <li>Recarregue a página atual (F5)</li>
                     <li>Verifique se a página permite scripts</li>
-                    <li>Tente em uma página diferente</li>
+                    <li>Tente em uma página diferente (ex: google.com)</li>
+                    <li>Verifique se não é uma página chrome:// ou chrome-extension://</li>
                   </ul>
                 </div>
               )}
